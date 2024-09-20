@@ -12,8 +12,7 @@ using ProgressBars
 using Zygote
 using CUDA
 
-stop_gradient(f) = f()
-Zygote.@nograd stop_gradient
+
 
 export reshape_for_local_SVD, carry_out_local_SVD, local_to_global_modes, compute_overlap_matrix, add_filter_to_modes, gen_projection_operators, true_W, true_R
 
@@ -54,7 +53,7 @@ function reshape_for_local_SVD(input,MP; subtract_average = false)
     loop_over = gen_permutations(I)
     data = []
     for i in 1:size(loop_over)[1]
-        
+
         i = loop_over[i,:]
         first_index = offsetter .* (i .-1 ) .+ 1
         second_index = offsetter .* (i)
@@ -89,7 +88,7 @@ end
 
 
 function local_to_global_modes(modes,MP)
-    
+
     number_of_modes = size(modes)[end]
     UPC = MP.coarse_mesh.UPC
     J = MP.J
@@ -103,7 +102,7 @@ function local_to_global_modes(modes,MP)
     end
 
     global_modes = modes .* some_ones
-   
+
     original_dims = collect(1:length(size(global_modes)))
     permuted_dims = copy(original_dims)
     permuted_dims[end] = original_dims[end-1]
@@ -117,7 +116,7 @@ function local_to_global_modes(modes,MP)
 
 
     loop_over = gen_permutations((J...,UPC))
-    
+
     for i in 1:size(loop_over)[1]
 
         i = loop_over[i,:]
@@ -167,7 +166,7 @@ function add_filter_to_modes(POD_modes,MP;orthogonalize = false)
     r = size(modes)[dims + 2]
     IP = 0
 
-    T = stop_gradient() do 
+    T = stop_gradient() do
         typeof(CUDA.@allowscalar(MP.fine_mesh.dx[1]))
     end
 
@@ -181,7 +180,7 @@ function add_filter_to_modes(POD_modes,MP;orthogonalize = false)
                 s_j = [[(:) for k in 1:dims+1]...,j:j]
                 mode_j = modes[s_j...]
                 IP = sum(MP.one_reconstructor(T(1/(prod(MP.fine_mesh.N)))*MP.one_filter(mode_j .* mode_i)),dims = collect(1:dims+1))
-   
+
                 modes[s_i...] .-= (IP) .* mode_j
             end
             mode_i = modes[s_i...]
@@ -214,7 +213,7 @@ end
 #POD_modes
 
 function gen_projection_operators(POD_modes,MP;uniform = false)
-    
+
     dims = MP.fine_mesh.dims
     J = MP.J
     I = MP.I
@@ -244,7 +243,7 @@ function gen_projection_operators(POD_modes,MP;uniform = false)
             return result
         end
     else
-        
+
         weights = POD_modes[[(1:J[i]) for i in 1:dims]...,:,:]
 
         #@assert dims <= 1 "Uniform Phi is not supported for dims > 1 at this time, set uniform = false"
@@ -258,10 +257,10 @@ function gen_projection_operators(POD_modes,MP;uniform = false)
 
         else
             Phi_T = Conv(J, size(weights)[dims+1]=>size(weights)[dims+2],stride = J,pad = 0,bias =false)   # First convolution, operating upon a 28x28 image
-            Phi = ConvTranspose(J, size(weights)[dims+2]=>size(weights)[dims+1],stride = J,pad = 0,bias =false)  # First 
+            Phi = ConvTranspose(J, size(weights)[dims+2]=>size(weights)[dims+1],stride = J,pad = 0,bias =false)  # First
 
         end
-        
+
         Phi_T.weight .= weights
         Phi.weight .= weights
 
@@ -283,49 +282,47 @@ end
 
 
 function true_W(u,setup,setup_bar,PO)
-    
+
     UPC = setup.mesh.UPC
     dims = setup.mesh.dims
 
-    
+
     a = PO.W(u)
-    
+
     u_bar_c = a[[(:) for i in 1:dims]...,1:UPC,:]
 
     u_bar_s = u_bar_c
-    
+
     r = setup_bar.O.M(padding(u_bar_s,Tuple((1 for i in 1:dims)),circular = true))
     p = setup_bar.PS(r)
-    
+
     Gp = setup_bar.O.G(padding(p,Tuple((1 for i in 1:dims)),circular = true))
-    
+
     u_bar_s -= Gp
-    
+
     return cat(u_bar_s,a[[(:) for i in 1:dims]...,UPC+1:end,:],dims = dims+1)
 end
 
 
 
 function true_R(a,setup,setup_bar,PO)
-    
+
     UPC = setup.mesh.UPC
     dims = setup.mesh.dims
-    
-    
-    
 
-    
+
+
+
+
     u_r = PO.R(a)
-    
+
     r = setup.O.M(padding(u_r,Tuple((1 for i in 1:dims)),circular = true))
     p = setup.PS(r)
 
     Gp = setup.O.G(padding(p,Tuple((1 for i in 1:dims)),circular = true))
-    
+
     u_r -= Gp
-    
-    
+
+
     return u_r
 end
-
-

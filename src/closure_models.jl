@@ -7,42 +7,40 @@ using CUDA
 using Flux
 using Zygote
 
-stop_gradient(f) = f()
-Zygote.@nograd stop_gradient
 
 
 
 export neural_rhs, gen_smagorinsky_operators, smagorinsky_model, divergence_model
 
 function neural_rhs(u_bar,mesh,t;rhs = rhs_bar,setup = setup_bar,model = model,B=model.B,other_arguments = 0)
-    
+
     dims = mesh.dims
-    
+
 
     RHS = rhs(u_bar,mesh,t,solve_pressure = false)
 
-    
-    input = cat(RHS,u_bar,dims = dims +1)  
+
+    input = cat(RHS,u_bar,dims = dims +1)
 
     nn_output = model(input)
 
     ### find pressure based on NN_output
 
     r = setup.O.M(padding(RHS + nn_output[:,:,1:2,:] ,(1,1),circular = true))
-    
+
     p = setup.PS(r)
-    
+
     Gp = setup.O.G(padding(p,(1,1),circular = true))
-    T = stop_gradient() do 
+    T = stop_gradient() do
         CUDA.@allowscalar(typeof(mesh.dx[1]))
     end
     ####################################
     # include damping from kolmogorov flow
-    physics_rhs = cat(RHS - Gp ,dims = dims +1) 
+    physics_rhs = cat(RHS - Gp ,dims = dims +1)
 
     return nn_output +   physics_rhs
-    
-    
+
+
 end
 
 
@@ -95,10 +93,10 @@ function gen_smagorinsky_operators(mesh)
 
     div = Conv(([3 for i in 1:dims]...,), UPC=>1,stride = ([1 for i in 1:dims]...,),pad = 0,bias =false)  # First convolution, operating upon a 28x28 image
     for i in 1:UPC
-        
+
         for j in 1:UPC
             stencil = copy(stenc_3)
-            if i == j 
+            if i == j
                 stencil[circshift(select,(i-1,))...] .= 1/h * [0,-1,1]
             end
             div.weight[[(:) for k in 1:dims]...,i,1] .= stencil
@@ -114,20 +112,20 @@ function gen_smagorinsky_operators(mesh)
         perm = perms[i,:]
         index_1 = perm[1]
         index_2 = perm[2]
-        
+
 
         stencil_1 = copy(stenc_3)
         stencil_2 = copy(stenc_3)
         stencil_1[circshift(select,(index_1-1,))...] .= 1/(2*h) * [1,-1,0]
         stencil_2[circshift(select,(index_2-1,))...] .= 1/(2*h) * [1,-1,0]
 
-        if index_1 <= index_2 
+        if index_1 <= index_2
             S.weight[[(:) for k in 1:dims]...,index_2,counter] .+= stencil_1
             S.weight[[(:) for k in 1:dims]...,index_1,counter] .+= stencil_2
             counter += 1
         end
     end
-    
+
 
     div = Conv(([3 for i in 1:dims]...,), sum(collect(1:UPC))=>UPC,stride = ([1 for i in 1:dims]...,),pad = 0,bias =false)  # First convolution, operating upon a 28x28 image
     perms = gen_permutations((dims,dims))
@@ -137,14 +135,14 @@ function gen_smagorinsky_operators(mesh)
         perm = perms[i,:]
         index_1 = perm[1]
         index_2 = perm[2]
-        
+
 
         stencil_1 = copy(stenc_3)
         stencil_2 = copy(stenc_3)
         stencil_1[circshift(select,(index_1-1,))...] .= 1/h * [0,-1,1]
         stencil_2[circshift(select,(index_2-1,))...] .= 1/h * [0,-1,1]
 
-        if index_1 <= index_2 
+        if index_1 <= index_2
             div.weight[[(:) for k in 1:dims]...,counter,index_2] .= stencil_1
             div.weight[[(:) for k in 1:dims]...,counter,index_1] .= stencil_2
             counter += 1
@@ -160,10 +158,10 @@ function gen_smagorinsky_operators(mesh)
         perm = perms[i,:]
         index_1 = perm[1]
         index_2 = perm[2]
-        
 
 
-        if index_1 <= index_2 
+
+        if index_1 <= index_2
             if index_1 != index_2
                 SS.weight[[(:) for k in 1:dims]...,counter,1] .= 2
             end
@@ -186,7 +184,7 @@ function gen_smagorinsky_operators(mesh)
 end
 
 function smagorinsky_model(u_bar,mesh,Cs,SO)
-    h =  stop_gradient() do 
+    h =  stop_gradient() do
         CUDA.@allowscalar(mesh.dx[1])
     end
     u_pad = padding(u_bar,(1,1),circular = true)
@@ -197,7 +195,7 @@ function smagorinsky_model(u_bar,mesh,Cs,SO)
 end
 
 function div_model(tau,mesh,SO)
-    
+
     tau_pad = padding(tau,(1,1),circular = true)
 
     return SO.div(tau_pad)

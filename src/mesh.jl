@@ -8,11 +8,9 @@ using CUDA
 using Flux
 using Zygote
 
-stop_gradient(f) = f()
-Zygote.@nograd stop_gradient
 
 
-export gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh
+export gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh, gen_FA_filter
 
 
 struct mesh_struct
@@ -180,13 +178,13 @@ function gen_mesh(x,y = nothing, z = nothing;UPC=1,use_GPU = false)
     function integ(a;weighted = true,omega = omega,dims = dims,ip = ip,use_GPU = use_GPU)
         #channel_a = a[[(:) for i in 1:dims]...,channel:channel,:]
         if use_GPU
-            some_ones = stop_gradient() do 
+            some_ones = stop_gradient() do
                 cu(ones(size(a)))
-            end 
+            end
         else
-            some_ones = stop_gradient() do 
+            some_ones = stop_gradient() do
                 ones(size(a))
-            end 
+            end
         end
         return ip(some_ones,a,weighted=weighted,omega=omega,dims=dims,combine_channels = false)
     end
@@ -268,7 +266,7 @@ function gen_FA_filter(J,UPC)
     dims = length(J)
     #J = (Jy,Jx)
     filter = Conv(J, UPC=>UPC,stride = J,pad = 0,bias =false)  # First convolution, operating upon a 28x28 image
-    
+
 
 
     for i in 1:UPC
@@ -295,10 +293,10 @@ function gen_mesh_pair(fine_mesh,coarse_mesh)
     I = coarse_mesh.N
     use_GPU = fine_mesh.use_GPU
 
-    
 
 
-    if use_GPU 
+
+    if use_GPU
         one_filter = gen_one_filter(J,UPC) |> gpu
 
         one_reconstructor = gen_one_reconstructor(J,UPC) |> gpu
@@ -306,9 +304,9 @@ function gen_mesh_pair(fine_mesh,coarse_mesh)
         FA_filter = gen_FA_filter(J,UPC) |> gpu
 
     else
-        one_filter = gen_one_filter(J,UPC) 
+        one_filter = gen_one_filter(J,UPC)
 
-        one_reconstructor = gen_one_reconstructor(J,UPC) 
+        one_reconstructor = gen_one_reconstructor(J,UPC)
 
         FA_filter = gen_FA_filter(J,UPC) |> gpu
     end
@@ -320,7 +318,7 @@ function gen_mesh_pair(fine_mesh,coarse_mesh)
     #print(typeof(fine_mesh.omega))
     #print(typeof(one_reconstructor(coarse_mesh.omega)))
     omega_tilde = fine_mesh.omega ./ one_reconstructor(coarse_mesh.omega)
-    
+
 
     return mesh_pair_struct(fine_mesh,coarse_mesh,J,I,one_filter,one_reconstructor,FA_filter,omega_tilde)
 end
