@@ -1,4 +1,4 @@
-include("mesh.jl")
+
 using FFTW
 using CUDA
 using Flux
@@ -72,7 +72,7 @@ function gen_grid_swapper(mesh)
         A_c_s_unweighted = A_c_s_unweighted |> gpu
     end
 
-    function A_c_s(V,A_c_s_unweighted = A_c_s_unweighted ,pad_size = pad_size) 
+    function A_c_s(V,A_c_s_unweighted = A_c_s_unweighted ,pad_size = pad_size)
 
         to_return =  A_c_s_unweighted(padding(V,pad_size,circular = true))
         return to_return
@@ -90,11 +90,11 @@ function gen_grid_swapper(mesh)
         A_s_c_unweighted = A_s_c_unweighted |> gpu
     end
 
-    function A_s_c(V,A_s_c_unweighted = A_s_c_unweighted,omega_s = omega_s,omega = omega,pad_size = pad_size) 
+    function A_s_c(V,A_s_c_unweighted = A_s_c_unweighted,omega_s = omega_s,omega = omega,pad_size = pad_size)
 
         to_return = (1 ./ omega) .* A_s_c_unweighted(padding(omega_s .* V,pad_size;circular = true))
 
-        return to_return 
+        return to_return
     end
 
     return grid_swapper(mesh,A_c_s,A_s_c,omega_s,dx_s,face_area)
@@ -339,9 +339,9 @@ struct setup_struct
 end
 
 function gen_setup(mesh)
-    
+
     O = gen_operators_uniform(mesh)
-    
+
     PS = gen_pressure_solver(mesh,O)
     GS = gen_grid_swapper(mesh)
 
@@ -355,7 +355,7 @@ function gen_rhs(setup,F;Re = 1000,damping = 0)
     function rhs(V,mesh,t;Re = Re,O=setup.O,PS = setup.PS,F = Float32.(padding(F,(1,1),circular = true)),solve_pressure = true,damping = damping,other_arguments = 0)
 
 
-        T = stop_gradient() do 
+        T = stop_gradient() do
             typeof(CUDA.@allowscalar(mesh.dx[1]))
         end
 
@@ -403,4 +403,3 @@ t_end = 10
 dt = 0.01
 save_every = 1000
 pre_allocate = true
-

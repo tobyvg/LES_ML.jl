@@ -61,6 +61,30 @@ function construct_k(N)
 end
 
 
+function gen_permutations(N)
+
+    N_grid = [collect(1:n) for n in N]
+
+    sub_grid = ones(Int,(N...))
+
+    dims = length(N)
+    sub_grids = []
+
+    for i in 1:dims
+        original_dims = collect(1:dims)
+        permuted_dims = copy(original_dims)
+        permuted_dims[1] = original_dims[i]
+        permuted_dims[i] = 1
+
+
+        push!(sub_grids,permutedims(N_grid[i] .*  permutedims(sub_grid,permuted_dims),permuted_dims))
+
+    end
+
+    return reshape(cat(sub_grids...,dims = dims + 1),(prod(N)...,dims))
+end
+
+
 function construct_spectral_filter(k_mats,max_k)
     filter = ones(size(k_mats)[1:end-1])
     N = size(k_mats)[1:end-1]

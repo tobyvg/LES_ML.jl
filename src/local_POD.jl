@@ -18,28 +18,7 @@ export reshape_for_local_SVD, carry_out_local_SVD, local_to_global_modes, comput
 
 
 
-function gen_permutations(N)
 
-    N_grid = [collect(1:n) for n in N]
-
-    sub_grid = ones(Int,(N...))
-
-    dims = length(N)
-    sub_grids = []
-
-    for i in 1:dims
-        original_dims = collect(1:dims)
-        permuted_dims = copy(original_dims)
-        permuted_dims[1] = original_dims[i]
-        permuted_dims[i] = 1
-
-
-        push!(sub_grids,permutedims(N_grid[i] .*  permutedims(sub_grid,permuted_dims),permuted_dims))
-
-    end
-
-    return reshape(cat(sub_grids...,dims = dims + 1),(prod(N)...,dims))
-end
 
 function reshape_for_local_SVD(input,MP; subtract_average = false)
     J = MP.J

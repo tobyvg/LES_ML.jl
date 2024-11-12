@@ -1,4 +1,3 @@
-export gen_skew_NN, save_skew_model, load_skew_model, gen_channel_mask, padding, stop_gradient
 
 using LinearAlgebra
 
@@ -15,6 +14,8 @@ using CUDA
 
 
 using NNlib
+
+export gen_NN, save_NN_model, load_NN_model, gen_channel_mask, padding, stop_gradient
 
 
 stop_gradient(f) = f()
@@ -65,7 +66,7 @@ function transpose_B(B_kernel)
 end
 
 
-struct skew_model_struct
+struct model_struct
     eval
     CNN
     r
@@ -81,7 +82,6 @@ struct skew_model_struct
     channels
     strides
 end
-
 
 
 
@@ -123,7 +123,7 @@ end
 function gen_channel_mask(data,channel;use_GPU = false)
     dims = length(size(data)) - 2
     number_of_channels = size(data)[end-1]
-  
+
     if use_GPU
         channel_mask = stop_gradient() do
             cu(zeros(size(data)[1:end-1]))
@@ -415,25 +415,11 @@ end
 # What to do with multiple unknowns, i.e. u and v field
 # How to save the neural network
 
-struct model_struct
-    eval
-    CNN
-    r
-    UPC
-    pad_size
-    boundary_padding
-    constrain_energy
-    conserve_momentum
-    dissipation
-    kernel_sizes
-    channels
-    strides
-end
 
 
 
 
-function gen_skew_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding = 0,constrain_energy = true,conserve_momentum=true,dissipation = true,use_GPU = false)
+function gen_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding = 0,constrain_energy = true,conserve_momentum=true,dissipation = true,use_GPU = false)
     if boundary_padding != 0 && boundary_padding != "c"
         add_input_channel = zeros(Int,size(channels)[1]+1)
         add_input_channel[1] += 1
@@ -455,7 +441,7 @@ function gen_skew_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding 
     pad_size = find_padding_size(CNN,use_GPU = use_GPU)
 
     if UPC == 0
-        UPC = length(size(model.CNN[1].weight))-2
+        UPC = length(size(CNN[1].weight))-2
     end
     dims = length(size(CNN[1].weight))-2
 
@@ -541,7 +527,7 @@ function gen_skew_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding 
 
             B1,B2,B3 = B_mats
 
-  
+
             if conserve_momentum
                 B1 = cons_mom_B(B1,channels = collect(1:UPC),use_GPU = use_GPU)
                 B2 = cons_mom_B(B2,channels = collect(1:UPC),use_GPU = use_GPU)
@@ -556,7 +542,7 @@ function gen_skew_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding 
 
 
             # skew_symmetric_form
-   
+
 
             c_tilde = Flux.conv(Flux.conv(a,B1) .* phi,B2_T) - Flux.conv(Flux.conv(a,B2) .* phi,B1_T)
 
@@ -571,36 +557,36 @@ function gen_skew_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding 
             return phi
 
         end
-        
+
     end
 
 
 
-    return skew_model_struct(NN,CNN,r,B,B_mats,UPC,pad_size,boundary_padding,constrain_energy,conserve_momentum,dissipation,kernel_sizes,channels,strides)
+    return model_struct(NN,CNN,r,B,B_mats,UPC,pad_size,boundary_padding,constrain_energy,conserve_momentum,dissipation,kernel_sizes,channels,strides)
 end
 
 
 
 
-function save_skew_model(model,name)
+function save_NN_model(model,name)
     if name[end] == "/"
         name = name[1:end-1]
     end
     mkpath(name)
     #save(name * "/model_state.jld","CNN_weights_and_biases",[(i.weight,i.bias) for i in model.CNN],"r",model.r,"B",model.B,"B_mats",model.B_mats,"UPC",model.UPC,"pad_size",model.pad_size,"boundary_padding",model.boundary_padding,"constrain_energy",model.constrain_energy,"conserve_momentum",model.conserve_momentum,"dissipation",model.dissipation,"kernel_sizes",model.kernel_sizes,"channels",model.channels,"strides",model.strides)
     save(name * "/model_state.jld","CNN_weights_and_biases",[(Array(i.weight),Array(i.bias)) for i in model.CNN],"r",model.r,"B",model.B,"B_mats",[Array(i) for i in model.B_mats],"UPC",model.UPC,"pad_size",model.pad_size,"boundary_padding",model.boundary_padding,"constrain_energy",model.constrain_energy,"conserve_momentum",model.conserve_momentum,"dissipation",model.dissipation,"kernel_sizes",model.kernel_sizes,"channels",model.channels,"strides",model.strides)
-    
-    
+
+
     print("\nModel saved at directory [" * name * "]\n")
 end
 
-function load_skew_model(name;use_GPU = false)
+function load_NN_model(name;use_GPU = false)
     if name[end] == "/"
         name = name[1:end-1]
     end
     CNN_weights_and_biases,r,B,B_mats,UPC,pad_size,boundary_padding,constrain_energy,conserve_momentum,dissipation,kernel_sizes,channels,strides = (load(name * "/model_state.jld")[i] for i in ("CNN_weights_and_biases","r","B","B_mats","UPC","pad_size","boundary_padding","constrain_energy","conserve_momentum","dissipation","kernel_sizes","channels","strides"))
 
-    model = gen_skew_NN(kernel_sizes,channels,strides,r,B,boundary_padding = boundary_padding,UPC = UPC,constrain_energy = constrain_energy,dissipation = dissipation,conserve_momentum = conserve_momentum,use_GPU = use_GPU)
+    model = gen_NN(kernel_sizes,channels,strides,r,B,boundary_padding = boundary_padding,UPC = UPC,constrain_energy = constrain_energy,dissipation = dissipation,conserve_momentum = conserve_momentum,use_GPU = use_GPU)
     if use_GPU
         for i in 1:length(model.CNN)
             model.CNN[i].weight .= cu(CNN_weights_and_biases[i][1])

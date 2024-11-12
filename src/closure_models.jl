@@ -22,11 +22,11 @@ function neural_rhs(u_bar,mesh,t;rhs = rhs_bar,setup = setup_bar,model = model,B
 
     input = cat(RHS,u_bar,dims = dims +1)
 
-    nn_output = model(input)
+    nn_output = model(input; a = padding(u_bar,2 .* B,circular = true))
 
     ### find pressure based on NN_output
 
-    r = setup.O.M(padding(RHS + nn_output[:,:,1:2,:] ,(1,1),circular = true))
+    r = setup.O.M(padding(RHS + nn_output ,(1,1),circular = true))
 
     p = setup.PS(r)
 
@@ -54,28 +54,7 @@ struct smagorinsky_operators_struct
     div
 end
 
-function gen_permutations(N)
 
-    N_grid = [collect(1:n) for n in N]
-
-    sub_grid = ones(Int,(N...))
-
-    dims = length(N)
-    sub_grids = []
-
-    for i in 1:dims
-        original_dims = collect(1:dims)
-        permuted_dims = copy(original_dims)
-        permuted_dims[1] = original_dims[i]
-        permuted_dims[i] = 1
-
-
-        push!(sub_grids,permutedims(N_grid[i] .*  permutedims(sub_grid,permuted_dims),permuted_dims))
-
-    end
-
-    return reverse(reshape(cat(sub_grids...,dims = dims + 1),(prod(N)...,dims)),dims =2 )
-end
 
 
 function gen_smagorinsky_operators(mesh)
@@ -187,10 +166,18 @@ function smagorinsky_model(u_bar,mesh,Cs,SO)
     h =  stop_gradient() do
         CUDA.@allowscalar(mesh.dx[1])
     end
-    u_pad = padding(u_bar,(1,1),circular = true)
+
+    u_pad = padding(u_bar,(2,2),circular = true)
+
     S = SO.S(u_pad)
+
     SS = sqrt.(SO.SS(S.^2))
-    vt = padding(Cs.^2 .* SS,(1,1),circular = true)
+    if length(size(Cs)) > 1
+        vt = padding(Cs.^2,(1,1),circular = true) .* SS
+    else
+        vt = Cs^2 * SS
+    end
+
     return SO.div(h * vt .* S)
 end
 
