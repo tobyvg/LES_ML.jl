@@ -12,33 +12,39 @@ using Zygote
 
 export neural_rhs, gen_smagorinsky_operators, smagorinsky_model, divergence_model
 
-function neural_rhs(u_bar,mesh,t;rhs = rhs_bar,setup = setup_bar,model = model,B=model.B,other_arguments = 0)
+function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 0)
 
     dims = mesh.dims
 
 
-    RHS = rhs(u_bar,mesh,t,solve_pressure = false)
+    RHS = rhs(u_bar,mesh,t,solve_pressure = false,other_arguments = other_arguments)
 
 
-    input = cat(RHS,u_bar,dims = dims +1)
+    input = cat(RHS,u_bar, Re * u_bar[[(:) for i in 1:dims]...,1:1,:] .^ 0,dims = dims +1)
 
-    nn_output = model(input; a = padding(u_bar,2 .* B,circular = true))
+    if B[1] != 0
+        nn_output = model(input; a = padding(u_bar,2 .* B,circular = true))
+    else
+        nn_output = model(input)
+    end
 
     ### find pressure based on NN_output
-
-    r = setup.O.M(padding(RHS + nn_output ,(1,1),circular = true))
+    RHS = 0*RHS
+    r = setup.O.M(padding(RHS + nn_output ,([1 for i in 1:dims]...,),circular = true))
 
     p = setup.PS(r)
 
-    Gp = setup.O.G(padding(p,(1,1),circular = true))
+    Gp = setup.O.G(padding(p,([1 for i in 1:dims]...,),circular = true))
     T = stop_gradient() do
         CUDA.@allowscalar(typeof(mesh.dx[1]))
     end
     ####################################
     # include damping from kolmogorov flow
+
+
     physics_rhs = cat(RHS - Gp ,dims = dims +1)
 
-    return nn_output +   physics_rhs
+    return  physics_rhs + nn_output
 
 
 end
@@ -175,13 +181,13 @@ function smagorinsky_model(u_bar,mesh,Cs,SO)
     if length(size(Cs)) > 1
         vt = padding(Cs.^2,(1,1),circular = true) .* SS
     else
-        vt = Cs^2 * SS
+        vt = Cs .^2 .* SS
     end
 
-    return SO.div(h * vt .* S)
+    return -SO.div(h * vt .* S)
 end
 
-function div_model(tau,mesh,SO)
+function divergence_model(tau,mesh,SO)
 
     tau_pad = padding(tau,(1,1),circular = true)
 

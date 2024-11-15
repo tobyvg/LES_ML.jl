@@ -445,8 +445,10 @@ function gen_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding = 0,c
     end
     dims = length(size(CNN[1].weight))-2
 
-
-    B1,B2,B3 = 0,0,0
+    if constrain_energy != true
+        B = 0 .* B
+    end
+    B1,B2,B3 = [0.],[0.],[0.]
     if use_GPU
         if constrain_energy
             B1 = cu(Float32.(Flux.glorot_uniform(Tuple(2*[B...] .+1)...,r,r)))
