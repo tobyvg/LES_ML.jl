@@ -1,6 +1,8 @@
 using LinearAlgebra
 using CUDA
 using JLD
+using ProgressMeter
+
 
 export simulate,simulate_differentiable, gen_time_interpolator
 
@@ -14,7 +16,7 @@ export simulate,simulate_differentiable, gen_time_interpolator
 
 function time_step(input,mesh,t,dt,rhs;other_arguments = 0,method = "RK4")
 
-    T = stop_gradient() do 
+    T = stop_gradient() do
         typeof(CUDA.@allowscalar(mesh.dx[1]))
     end
     if method == "RK4"
@@ -23,13 +25,13 @@ function time_step(input,mesh,t,dt,rhs;other_arguments = 0,method = "RK4")
 
         k2 = rhs(input + T(dt/2)*k1,mesh,t .+ dt/2,other_arguments = other_arguments)
 
- 
+
         #k1 = rhs(input,mesh,t,other_arguments = other_arguments)
 
         k3 = rhs(input + T(dt/2)*k2,mesh,t .+ dt/2,other_arguments = other_arguments)
         k4 = rhs(input + T(dt)*k3,mesh,t .+ dt,other_arguments = other_arguments)
 
-        
+
 
         return T(1/6*dt)*(k1 + 2*k2 + 2*k3 + k4)
 
@@ -93,7 +95,7 @@ function simulate(input0,mesh,dt,t_start,t_end,rhs;time_step_function=time_step,
         t = cu(t)
     end
 
-    for i in iterate(1:steps)
+    @showprogress for i in 1:steps
         input += time_step_function(input,mesh,t,dt,rhs;other_arguments = other_arguments)
 
         t  = t .+ dt
@@ -101,7 +103,7 @@ function simulate(input0,mesh,dt,t_start,t_end,rhs;time_step_function=time_step,
         if pre_allocate
             @assert isnan(CUDA.@allowscalar(input[1])) == false "NaN appeared in simulation"
         end
-        
+
         if i % save_every == 0
             pre_alloc_counter += 1
             if pre_allocate
@@ -171,9 +173,9 @@ function simulate_differentiable(input0,mesh,dt,t_start,t_end,rhs;time_step_func
 
         t  = t .+ dt
 
-        
+
         if i % save_every == 0
- 
+
 
             output = cat([output,input]...,dims = dims + 3)
             output_t = cat([output_t,t]...,dims = dims + 3)
@@ -196,14 +198,14 @@ function gen_time_interpolator(t_data,data) # only for uniform timesteps
         # supply t as (1,1,1,considered_number_of_simulations,considered_points_in_time) and
         # simulation indexes as a (considered_number_of_simulations) sized array
         dims = length(size(data))-3
- 
+
         data = data[[(:) for i in 1:dims+1]...,simulation_indexes,:]
         t_data = t_data[[(:) for i in 1:dims+1]...,simulation_indexes,:]
 
         t_start = t_data[[(:) for i in 1:dims+1]...,:,1:1]
         t_end =  t_data[[(:) for i in 1:dims+1]...,:,end:end]
         number_of_time_steps = size(t_data)[end] .- 1
-  
+
         indexes = number_of_time_steps .* (((t .* typeof(t)(ones(size(t_start)))) .- t_start) ./ (t_end .- t_start)) .+ 1
 
         lower_index = floor.(Int,indexes)
@@ -220,7 +222,7 @@ function gen_time_interpolator(t_data,data) # only for uniform timesteps
 
 
         interpolated = weight .* higher_data + (1 .- weight) .* lower_data
-  
+
         return interpolated
     end
 end

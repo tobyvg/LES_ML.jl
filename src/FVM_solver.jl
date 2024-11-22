@@ -6,6 +6,7 @@ using Flux
 
 export gen_setup,gen_rhs
 
+### interpolate from cell centered to staggered
 function gen_A_c_s(mesh)
     dims = mesh.dims
     omega = mesh.omega
@@ -28,6 +29,7 @@ function gen_A_c_s(mesh)
     return A
 end
 
+### interpolate from staggered to cell-centred
 function gen_A_s_c(mesh)
     dims = mesh.dims
     omega = mesh.omega
@@ -349,9 +351,11 @@ function gen_setup(mesh)
 end
 
 
-function gen_rhs(setup,F;Re = 1000,damping = 0)
+function gen_rhs(setup;F =0,Re = 1000,damping = 0)
 
-
+    if F == 0
+        F = 0 * setup.mesh.omega
+    end
     function rhs(V,mesh,t;Re = Re,O=setup.O,PS = setup.PS,F = Float32.(padding(F,(1,1),circular = true)),solve_pressure = true,damping = damping,other_arguments = 0)
 
 

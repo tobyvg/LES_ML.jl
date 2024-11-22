@@ -10,7 +10,7 @@ using Zygote
 
 
 
-export gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh, gen_FA_filter
+export construct_k,gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh, gen_FA_filter
 
 
 struct mesh_struct
@@ -24,7 +24,7 @@ struct mesh_struct
     ip # computes inner-product
     integ # integral on the grid
     UPC # unknows per grid cell
-    use_GPU
+    use_GPU # Whether to use GPU for computations
 end
 
 struct mesh_pair_struct
@@ -84,6 +84,32 @@ function gen_permutations(N)
     return reshape(cat(sub_grids...,dims = dims + 1),(prod(N)...,dims))
 end
 
+
+function generate_spectrum(samples,mesh,a)
+    k = construct_k(mesh.N)
+    k2 = sqrt.(sum((k).^2,dims = 3))
+    u_hat = fft(samples,[1,2])
+    e_hat = 1/2*sum((1/prod(mesh.N))*u_hat .* conj.(u_hat),dims = [3])
+    k2_flat = reshape(k2,(prod(size(k2)[1:end-1])...,size(k2)[end]))
+    e_hat_flat = reshape(e_hat,(prod(size(e_hat)[1:end-1])...,size(e_hat)[end]))
+
+    bin_lims = extrema(k2_flat)
+    bins = collect(1:floor(bin_lims[2]/a))
+
+    #Generate dyadic bins
+    lower_bins = bins / a
+    upper_bins = bins * a
+
+    energies = zeros(size(bins)[1])
+    for i in 1:size(e_hat_flat)[1]
+        for j in 1:size(lower_bins)[1]
+            if k2_flat[i,1] > lower_bins[j] && k2_flat[i,1] <= upper_bins[j]
+                energies[j] += mean(e_hat_flat[i,:])
+            end
+        end
+    end
+    return bins,energies
+end
 
 function construct_spectral_filter(k_mats,max_k)
     filter = ones(size(k_mats)[1:end-1])
