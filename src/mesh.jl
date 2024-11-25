@@ -88,8 +88,8 @@ end
 function generate_spectrum(samples,mesh,a)
     k = construct_k(mesh.N)
     k2 = sqrt.(sum((k).^2,dims = 3))
-    u_hat = fft(samples,[1,2])
-    e_hat = 1/2*sum((1/prod(mesh.N))*u_hat .* conj.(u_hat),dims = [3])
+    V_hat = fft(samples,[1,2])
+    e_hat = 1/2*sum((1/prod(mesh.N))*V_hat .* conj.(V_hat),dims = [3])
     k2_flat = reshape(k2,(prod(size(k2)[1:end-1])...,size(k2)[end]))
     e_hat_flat = reshape(e_hat,(prod(size(e_hat)[1:end-1])...,size(e_hat)[end]))
 
