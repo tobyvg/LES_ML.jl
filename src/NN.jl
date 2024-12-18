@@ -491,7 +491,9 @@ function gen_NN(kernel_sizes,channels,strides,r,B;UPC = 0,boundary_padding = 0,c
         ####################################
 
         if boundary_padding == 0 || boundary_padding == "c"
+
             output = CNN(padding(input,pad_size,circular = true))
+
 
         else
             pad_input = padding(input,pad_size,BCs = boundary_padding)

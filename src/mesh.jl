@@ -10,7 +10,7 @@ using Zygote
 
 
 
-export construct_k,gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh, gen_FA_filter
+export generate_spectrum,construct_k,gen_random_field,gen_mesh,gen_mesh_pair,gen_coarse_from_fine_mesh, gen_FA_filter
 
 
 struct mesh_struct
@@ -85,11 +85,11 @@ function gen_permutations(N)
 end
 
 
-function generate_spectrum(samples,mesh,a)
+function generate_spectrum(samples,mesh; a = 1.6)
     k = construct_k(mesh.N)
     k2 = sqrt.(sum((k).^2,dims = 3))
-    V_hat = fft(samples,[1,2])
-    e_hat = 1/2*sum((1/prod(mesh.N))*V_hat .* conj.(V_hat),dims = [3])
+    V_hat = fft(samples,[1,2]) ./ prod(mesh.N)
+    e_hat = 1/2*sum(V_hat .* conj.(V_hat),dims = [3])
     k2_flat = reshape(k2,(prod(size(k2)[1:end-1])...,size(k2)[end]))
     e_hat_flat = reshape(e_hat,(prod(size(e_hat)[1:end-1])...,size(e_hat)[end]))
 

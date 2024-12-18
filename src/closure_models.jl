@@ -18,14 +18,17 @@ function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 
 
 
     RHS = rhs(u_bar,mesh,t,solve_pressure = false,other_arguments = other_arguments)
-
+    
+    T = stop_gradient() do
+        CUDA.@allowscalar(typeof(mesh.dx[1]))
+    end
 
     input = cat(RHS,u_bar, Re * u_bar[[(:) for i in 1:dims]...,1:1,:] .^ 0,dims = dims +1)
 
     if B[1] != 0
-        nn_output = model(input; a = padding(u_bar,2 .* B,circular = true))
+        nn_output = T(1.)*model(input; a = padding(u_bar,2 .* B,circular = true))
     else
-        nn_output = model(input)
+        nn_output = T(1.)*model(input)
     end
 
     ### find pressure based on NN_output
@@ -35,9 +38,7 @@ function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 
     p = setup.PS(r)
 
     Gp = setup.O.G(padding(p,([1 for i in 1:dims]...,),circular = true))
-    T = stop_gradient() do
-        CUDA.@allowscalar(typeof(mesh.dx[1]))
-    end
+    
     ####################################
     # include damping from kolmogorov flow
 
