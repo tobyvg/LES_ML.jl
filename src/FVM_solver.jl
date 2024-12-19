@@ -356,7 +356,14 @@ function gen_rhs(setup;F =0,Re = 1000,damping = 0)
     if F == 0
         F = 0 * setup.mesh.omega
     end
-    function rhs(V,mesh,t;Re = Re,O=setup.O,PS = setup.PS,F = Float32.(padding(F,(1,1),circular = true)),solve_pressure = true,damping = damping,other_arguments = 0)
+
+    T = stop_gradient() do
+        typeof(CUDA.@allowscalar(setup.mesh.dx[1]))
+    end
+    
+    F = T.(padding(F,(1,1),circular = true))
+
+    function rhs(V,mesh,t;Re = Re,O=setup.O,PS = setup.PS,F = F,solve_pressure = true,damping = damping,other_arguments = 0)
 
 
         T = stop_gradient() do

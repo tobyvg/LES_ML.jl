@@ -32,7 +32,7 @@ function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 
     end
 
     ### find pressure based on NN_output
-    #RHS = 0*RHS
+
     r = setup.O.M(padding(RHS + nn_output ,([1 for i in 1:dims]...,),circular = true))
 
     p = setup.PS(r)
@@ -43,9 +43,9 @@ function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 
     # include damping from kolmogorov flow
 
 
-    physics_rhs = cat(RHS - Gp ,dims = dims +1)
+    physics_rhs = RHS - Gp
 
-    return  physics_rhs + nn_output
+    return  nn_output  + physics_rhs 
 
 
 end
