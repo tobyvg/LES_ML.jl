@@ -409,8 +409,3 @@ function gen_rhs(setup;F =0,Re = 1000,damping = 0)
     return rhs
 end
 
-t_start = 0
-t_end = 10
-dt = 0.01
-save_every = 1000
-pre_allocate = true

@@ -6,6 +6,9 @@ using Distributions
 using ProgressMeter
 using JLD
 using Flux
+using Random
+
+Random.seed!(3)
 
 
 use_GPU = true
@@ -102,7 +105,7 @@ training_data = 0
 
 for I in Is
 
-
+    Random.seed!(3)
     Re = 1000
     damping = 0.
 
@@ -121,6 +124,7 @@ for I in Is
     end_time = 5
 
     for i in flow_data
+        global_training_data = 0
 
         if i.I == I
             global training_data = import_data(i,start_time,end_time, what_to_import = ["Vbar","F","t"],use_GPU = use_GPU)
@@ -139,9 +143,10 @@ for I in Is
 
     SO = gen_smagorinsky_operators(mesh)
 
-    Cs = [0.01]
+    Cs = cu([0.03])
+    B = (0,0)
 
-    function const_smag_model(input;mesh = coarse_mesh,Cs = Cs,SO = SO)
+    function const_smag_model(input;mesh = mesh,Cs = Cs,SO = SO)
         dims = mesh.dims
         u_bar = input[[(:) for i in 1:dims]...,1:dims,:]
         return smagorinsky_model(u_bar,mesh,Cs,SO)
@@ -154,11 +159,13 @@ for I in Is
     ########## preprocess data #######################
 
     ref_data = training_data["Vbar"]
+    t_data = training_data["t"]
+
     original_shape = size(ref_data)[end-1:end]
 
     ref_data = reshape(ref_data,(size(ref_data)[1:end-2]...,prod(size(ref_data)[end-1:end])))
 
-    t_data = training_data["t"]
+    
 
     traj_dt = 0.002
     traj_steps = 10
@@ -206,39 +213,56 @@ for I in Is
     #### evaluate loss ### 
 
     select_every = 200
+    select_every = select_every*original_shape[1]
     select = round.(Int64,LinRange(0,div(prod(size(traj_indexes)),select_every+1)*(select_every),div(prod(size(traj_indexes)),select_every+1)+1) .+ 1)
+    select = cat([select .+ (i-1) for i in 1:original_shape[1]]...,dims = 1)
 
-    #sqrt.(trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select]))
-
-    #### Training procedure #####
 
     opt = Adam()
 
     ps = Flux.params(Cs)
-    epochs =10
+    epochs = 10
     losses = zeros(epochs)
 
-    batchsize = 20
 
+
+    
+    relative_losses = zeros(epochs)
+
+    batchsize = 5
+
+
+    coarse_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select],neural_rhs = coarse_rhs)
+    Random.seed!(3)
+    print(Cs)
     @showprogress for epoch in 1:epochs
         
         ###### Load a subset of the data ######
-        #select = rand(collect(1:prod(size(traj_indexes))),(snapshots_included))
-        #select = collect(1:prod(size(traj_indexes)))
         trajectory_fitting_data_loader = Flux.DataLoader((traj_data[:,:,:,select],traj_indexes[select],traj_times[select]), batchsize=batchsize,shuffle=true)
         #######################################
         
         Flux.train!(trajectory_fitting_loss,ps, trajectory_fitting_data_loader, opt)
+
+        
         train_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select])
         losses[epoch] = train_loss
+        relative_losses[epoch] = train_loss/coarse_loss
+ 
         GC.gc()
         CUDA.reclaim()
     end
+    print(Cs)
+    losses = sqrt.(losses)
+    relative_losses = sqrt.(relative_losses)
+
 
     plot(losses,yscale= :log10,marker = true)
-    savefig("const_smag_toppertje_"*"$I"*".png")
+    savefig("const_smag_loss_"*"$I"*".png")
+    plot(relative_losses,marker = true)
+    savefig("const_smag_relative_"*"$I"*".png")
 
     
     save("./models/const_smag_"*"$I"*"/losses.jld","losses",losses)
-    save("./models/const_smag_"*"$I"*"/Cs.jld","Cs",Cs)
+    save("./models/const_smag_"*"$I"*"/Cs.jld","Cs",Array(Cs))
+    save("./models/const_smag_"*"$I"*"/relative_losses.jld","relative_losses",relative_losses)
 end

@@ -23,12 +23,12 @@ function neural_rhs(u_bar,mesh,t;setup,rhs,Re,model,B = (0,0),other_arguments = 
         CUDA.@allowscalar(typeof(mesh.dx[1]))
     end
 
-    input = cat(RHS,u_bar, Re * u_bar[[(:) for i in 1:dims]...,1:1,:] .^ 0,dims = dims +1)
+    input = cat(RHS,u_bar, T(Re/1000.) * u_bar[[(:) for i in 1:dims]...,1:1,:] .^ 0,dims = dims +1)
 
     if B[1] != 0
-        nn_output = T(1.)*model(input; a = padding(u_bar,2 .* B,circular = true))
+        nn_output = model(input; a = padding(u_bar,2 .* B,circular = true))
     else
-        nn_output = T(1.)*model(input)
+        nn_output = model(input)
     end
 
     ### find pressure based on NN_output
@@ -170,6 +170,11 @@ function gen_smagorinsky_operators(mesh)
 end
 
 function smagorinsky_model(u_bar,mesh,Cs,SO)
+
+    T = stop_gradient() do
+        CUDA.@allowscalar(typeof(mesh.dx[1]))
+    end
+
     h =  stop_gradient() do
         CUDA.@allowscalar(mesh.dx[1])
     end
@@ -193,4 +198,5 @@ function divergence_model(tau,mesh,SO)
     tau_pad = padding(tau,(1,1),circular = true)
 
     return SO.div(tau_pad)
+
 end

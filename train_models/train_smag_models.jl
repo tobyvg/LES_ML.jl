@@ -6,8 +6,9 @@ using Distributions
 using ProgressMeter
 using JLD
 using Flux
+using Random
 
-
+Random.seed!(3)
 use_GPU = true
 datadir = "./training_data_KF_damping_0.0_Re_1000"
 paths =  datadir  .* "/" .* readdir(datadir)
@@ -102,7 +103,7 @@ training_data = 0
 
 for I in Is
 
-
+    Random.seed!(3)
     Re = 1000
     damping = 0.
 
@@ -122,8 +123,9 @@ for I in Is
     
 
     for i in flow_data
+        global_training_data = 0
 
-        if i.I == I
+        if i.I == I 
             global training_data = import_data(i,start_time,end_time, what_to_import = ["Vbar","F","t"],use_GPU = use_GPU)
         end
     end
@@ -142,16 +144,16 @@ for I in Is
 
     r = 1
     BC = "c"
-    channels = [5,30,30] # inputs: u,v,du/dt,dv/dt,viscosity
-    strides = [(1,1),(1,1),(1,1)]
-    kernel_sizes = [(1,1),(1,1),(1,1)]
+    channels = [5,30,30,30,30] # inputs: u,v,du/dt,dv/dt,Re
+    strides = [(1,1),(1,1),(1,1),(1,1),(1,1)]
+    kernel_sizes = [(2,2),(2,2),(2,2),(2,2),(2,2)]
     B = (0,0)
     constrain_energy = false
     conserve_momentum = false
 
-    model = gen_NN(kernel_sizes,channels,strides,r,B;boundary_padding = BC,constrain_energy = constrain_energy, conserve_momentum = conserve_momentum)
+    model = gen_NN(kernel_sizes,channels,strides,r,B;boundary_padding = BC,constrain_energy = constrain_energy, conserve_momentum = conserve_momentum,use_GPU = use_GPU)
 
-    function smag_model(input;mesh = coarse_mesh,NN = model.eval,SO = SO)
+    function smag_model(input;mesh = mesh,NN = model.eval,SO = SO)
         dims = mesh.dims
         u_bar = input[[(:) for i in 1:dims]...,1:dims,:]
         Cs = NN(input)
@@ -159,16 +161,18 @@ for I in Is
     end
     
 
-    NN_rhs(u_bar,mesh,t;setup= setup,rhs = coarse_rhs,Re = Re,model = smag_model,B =model.B,other_arguments = 0) = neural_rhs(u_bar,mesh,t;setup= setup,rhs = rhs,Re = Re,model = model,B = B)
+    NN_rhs(u_bar,mesh,t;setup= setup,rhs = coarse_rhs,Re = Re,model = smag_model,B =B,other_arguments = 0) = neural_rhs(u_bar,mesh,t;setup= setup,rhs = rhs,Re = Re,model = model,B = B)
 
     ########## preprocess data #######################
 
     ref_data = training_data["Vbar"]
+    t_data = training_data["t"]
+
     original_shape = size(ref_data)[end-1:end]
 
     ref_data = reshape(ref_data,(size(ref_data)[1:end-2]...,prod(size(ref_data)[end-1:end])))
 
-    t_data = training_data["t"]
+    
 
     traj_dt = 0.002
     traj_steps = 10
@@ -216,40 +220,54 @@ for I in Is
     #### evaluate loss ### 
 
     select_every = 200
+    select_every = select_every*original_shape[1]
     select = round.(Int64,LinRange(0,div(prod(size(traj_indexes)),select_every+1)*(select_every),div(prod(size(traj_indexes)),select_every+1)+1) .+ 1)
+    select = cat([select .+ (i-1) for i in 1:original_shape[1]]...,dims = 1)
 
-    #sqrt.(trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select]))
-
-    #### Training procedure #####
 
     opt = Adam()
 
     ps = Flux.params(model.CNN,model.B_mats...)
-    epochs =10
+    epochs = 2
     losses = zeros(epochs)
 
-    batchsize = 20
 
 
+    
+    relative_losses = zeros(epochs)
 
+    batchsize = 5
+
+
+    coarse_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select],neural_rhs = coarse_rhs)
+    Random.seed!(3)
+    
     @showprogress for epoch in 1:epochs
         
         ###### Load a subset of the data ######
-        #select = rand(collect(1:prod(size(traj_indexes))),(snapshots_included))
-        #select = collect(1:prod(size(traj_indexes)))
         trajectory_fitting_data_loader = Flux.DataLoader((traj_data[:,:,:,select],traj_indexes[select],traj_times[select]), batchsize=batchsize,shuffle=true)
         #######################################
         
         Flux.train!(trajectory_fitting_loss,ps, trajectory_fitting_data_loader, opt)
+
+        
         train_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select])
         losses[epoch] = train_loss
+        relative_losses[epoch] = train_loss/coarse_loss
+ 
         GC.gc()
         CUDA.reclaim()
     end
 
+    losses = sqrt.(losses)
+    relative_losses = sqrt.(relative_losses)
+
     plot(losses,yscale= :log10,marker = true)
-    savefig("smag_toppertje_"*"$I"*".png")
+    savefig("smag_loss_"*"$I"*".png")
+    plot(relative_losses,marker = true)
+    savefig("smag_relative_"*"$I"*".png")
 
     save_NN_model(model,"./models/smag_"*"$I"*"/smag_model")
     save("./models/smag_"*"$I"*"/losses.jld","losses",losses)
+    save("./models/smag_"*"$I"*"/relative_losses.jld","relative_losses",relative_losses)
 end

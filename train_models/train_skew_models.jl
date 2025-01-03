@@ -6,7 +6,8 @@ using Distributions
 using ProgressMeter
 using JLD
 using Flux
-
+using Random
+Random.seed!(3)
 
 use_GPU = true
 datadir = "./training_data_KF_damping_0.0_Re_1000"
@@ -96,12 +97,12 @@ function import_data(d,start_time,end_time;what_to_import = ["E","t","Vbar","dVb
     return to_return
 end
 
-Is = [64]
+Is = [32,64,128]
 
 training_data = 0
 
 for I in Is
-
+    Random.seed!(3)
 
     Re = 1000
     damping = 0.
@@ -122,6 +123,7 @@ for I in Is
 
 
     for i in flow_data
+        global_training_data = 0
 
         if i.I == I
             global training_data = import_data(i,start_time,end_time, what_to_import = ["Vbar","F","t"],use_GPU = use_GPU)
@@ -139,9 +141,9 @@ for I in Is
 
     r = 2 # number of output channels
     BC = "c"
-    channels = [5,30,30] # inputs: u,v,du/dt,dv/dt,viscosity
-    strides = [(1,1),(1,1),(1,1)]
-    kernel_sizes = [(1,1),(1,1),(1,1)]
+    channels = [5,30,30,30,30] # inputs: u,v,du/dt,dv/dt,Re
+    strides = [(1,1),(1,1),(1,1),(1,1),(1,1)]
+    kernel_sizes = [(2,2),(2,2),(2,2),(2,2),(2,2)]
     B = (1,1)
     constrain_energy = true
     conserve_momentum = true
@@ -155,11 +157,13 @@ for I in Is
     ########## preprocess data #######################
 
     ref_data = training_data["Vbar"]
+    t_data = training_data["t"]
+
     original_shape = size(ref_data)[end-1:end]
 
     ref_data = reshape(ref_data,(size(ref_data)[1:end-2]...,prod(size(ref_data)[end-1:end])))
 
-    t_data = training_data["t"]
+    
 
     traj_dt = 0.002
     traj_steps = 10
@@ -193,7 +197,7 @@ for I in Is
         t_start = reshape(times,([1 for i in 1:dims+1]...,size(times)[1]))
         
         t_end =  t_start .+ steps *dt
-  
+
         t,result = simulate_differentiable(input,coarse_mesh,dt,t_start,t_end,neural_rhs,save_every = 1) 
 
         reference = stop_gradient() do
@@ -207,32 +211,31 @@ for I in Is
     #### evaluate loss ### 
 
     select_every = 200
+    select_every = select_every*original_shape[1]
     select = round.(Int64,LinRange(0,div(prod(size(traj_indexes)),select_every+1)*(select_every),div(prod(size(traj_indexes)),select_every+1)+1) .+ 1)
-    select = [1]
-    #sqrt.(trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select]))
+    select = cat([select .+ (i-1) for i in 1:original_shape[1]]...,dims = 1)
 
-    #### Training procedure #####
 
     opt = Adam()
 
     ps = Flux.params(model.CNN,model.B_mats...)
-    epochs =50
+    epochs = 200
     losses = zeros(epochs)
+
 
 
     
     relative_losses = zeros(epochs)
 
-    batchsize = 1
+    batchsize = 5
 
-    train_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select])
+
     coarse_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select],neural_rhs = coarse_rhs)
-    #print(train_loss)
+    Random.seed!(3)
+    
     @showprogress for epoch in 1:epochs
         
         ###### Load a subset of the data ######
-        #select = rand(collect(1:prod(size(traj_indexes))),(snapshots_included))
-        #select = collect(1:prod(size(traj_indexes)))
         trajectory_fitting_data_loader = Flux.DataLoader((traj_data[:,:,:,select],traj_indexes[select],traj_times[select]), batchsize=batchsize,shuffle=true)
         #######################################
         
@@ -242,6 +245,7 @@ for I in Is
         train_loss = trajectory_fitting_loss(traj_data[:,:,:,select],traj_indexes[select],traj_times[select])
         losses[epoch] = train_loss
         relative_losses[epoch] = train_loss/coarse_loss
+ 
         GC.gc()
         CUDA.reclaim()
     end
@@ -251,7 +255,7 @@ for I in Is
 
 
     plot(losses,yscale= :log10,marker = true)
-    savefig("skew_toppertje_"*"$I"*".png")
+    savefig("skew_loss_"*"$I"*".png")
     plot(relative_losses,marker = true)
     savefig("skew_relative_"*"$I"*".png")
     
